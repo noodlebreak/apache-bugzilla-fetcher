@@ -171,6 +171,7 @@ class BugzillaAPI(object):
                         # In worst case scenario, we could see each field having 3-4 bugs
                         # If assuming only 1 field of these 3 would always link to an unsaved bug
                         # and that kept happening for 10 jumps straight, we're looking at 1024 recursions.
+                        # And even though we can change that with sys.setrecursionlimit(n), it's a bad implementation.
                         # We can flatten it out in periodic checks and clearing up in a background task
                         # BUT, that's beyond the scope of this assignment.
                 getattr(bug, field).add(*field_m2m_bugs)

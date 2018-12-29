@@ -52,3 +52,7 @@ createdb bugzilla
 ## Sample Run Screenshot:
 
 ![Locally run on celery](https://i.imgur.com/BuwVPCg.png)
+
+## Patches folder
+
+This exists containing the git diff of changes for using the recursion version of clearing M2M and FK from Bug to itself for various fields like blocks, depends_on, etc. 
