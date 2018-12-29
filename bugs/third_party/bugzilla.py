@@ -3,7 +3,7 @@ import six
 import requests as r
 
 from django.conf import settings
-from django.contrib.auth.models import get_user_model
+from django.contrib.auth import get_user_model
 from bugs import models
 
 User = get_user_model()
@@ -53,6 +53,7 @@ class BugzillaAPI(object):
         params = self.search_terms
         if get_params:
             params = get_params
+        print("Fetching bugs ...")
         response = r.get(self._get_api_resource_path(), params=params)
         if response.ok:
             try:
@@ -62,6 +63,7 @@ class BugzillaAPI(object):
                 # OR if `bugs` object is not present in JSON response.
                 return False, response.text
         else:
+            print("Bug fetch failure")
             return False, response
 
     def _get_users(self, user_details):
@@ -70,20 +72,30 @@ class BugzillaAPI(object):
         Output will be list of gotten or created users.
         """
         users = []
+        return_single = False
         if isinstance(user_details, dict):
+            return_single = True
             user_details = [user_details]
         elif isinstance(user_details, six.string_types):
-            user_details = {'email': user_details, 'real_name': user_details}
+            return_single = True
+            user_details = [{'email': user_details, 'real_name': user_details}]
+
+        if not user_details:
+            if return_single:
+                return
+            return []
+
         for detail in user_details:
-            name_parts = user_details['real_name'].partition(' '),
-            first_name = name_parts[0],
-            last_name = " ".join(name_parts[1:])
             user, _ = User.objects.get_or_create(
-                email=user_details['email'],
-                first_name=first_name,
-                last_name=last_name,
+                email=detail['email'],
+                name=detail['real_name'],
             )
             users.append(user)
+        if return_single:
+            if users:
+                return users[0]
+            else:
+                return
         return users
 
     def _get_bugs(self,  bug_ids, fk=False):
@@ -105,12 +117,11 @@ class BugzillaAPI(object):
     def _get_non_user_m2m_objects(self, input_list, model):
         return [model.objects.get_or_create(name=val)[0] for val in input_list]
 
-    def _add_m2m_field_objects(self, bug, aliases, cc, flags, groups, keywords):
-        bug.alias.add(aliases)
-        bug.cc.add(cc)
-        bug.flags.add(flags)
-        bug.groups.add(groups)
-        bug.keywords.add(keywords)
+    def _add_m2m_field_objects(self, bug, cc, flags, groups, keywords):
+        bug.cc.add(*cc)
+        bug.flags.add(*flags)
+        bug.groups.add(*groups)
+        bug.keywords.add(*keywords)
 
     def _filter_bugs(self, bz_id_list, single=False):
         if single:
@@ -175,7 +186,6 @@ class BugzillaAPI(object):
         Given dict of bug details from Bugzilla bugs API,
         this function will create and return the Bug model instance for it.
         """
-        bug = None
 
         """
         Initially had modelled these as FK (dupe_of) and M2Ms,
@@ -198,25 +208,25 @@ class BugzillaAPI(object):
         # )
         """
 
-        aliases = self._get_non_user_m2m_objects(bug_detail['alias'], models.Alias)
-        cc = self._get_users(bug_detail['cc_detail']),
+        cc = self._get_users(bug_detail['cc_detail'])
         flags = self._get_non_user_m2m_objects(bug_detail['flags'], models.Flag)
         groups = self._get_non_user_m2m_objects(bug_detail['groups'], models.Group)
         keywords = self._get_non_user_m2m_objects(bug_detail['keywords'], models.Keyword)
 
         values = dict(
             bz_id=bug_detail['id'],
-            assigned_to=self._get_users(bug_detail['assigned_to_detail'])[0],
+            alias=",".join(bug_detail['alias']),
+            assigned_to=self._get_users(bug_detail['assigned_to_detail']),
 
             blocks=bug_detail['blocks'],
             depends_on=bug_detail['depends_on'],
             dupe_of=bug_detail['dupe_of'],
-            see_also=bug_detail['see_also'],
+            see_also=[sa.split('=')[-1] for sa in bug_detail['see_also']],
 
             classification=self._get_non_user_fk_objects(bug_detail['classification'], models.Classification),
             component=self._get_non_user_fk_objects(bug_detail['component'], models.Component),
             creation_time=bug_detail['creation_time'],
-            creator=self._get_users(bug_detail['creator_detail'])[0],
+            creator=self._get_users(bug_detail['creator_detail']),
             deadline=bug_detail['deadline'],
             is_cc_accessible=bug_detail['is_cc_accessible'],
             is_confirmed=bug_detail['is_confirmed'],
@@ -227,7 +237,7 @@ class BugzillaAPI(object):
             platform=self._get_non_user_fk_objects(bug_detail['platform'], models.Platform),
             priority=self._get_non_user_fk_objects(bug_detail['priority'], models.Priority),
             product=self._get_non_user_fk_objects(bug_detail['product'], models.Product),
-            qa_contact=self._get_users(bug_detail['qa_contact'])[0],
+            qa_contact=self._get_users(bug_detail['qa_contact']),
             resolution=bug_detail['resolution'],
             severity=self._get_non_user_fk_objects(bug_detail['severity'], models.Severity),
             status=self._get_non_user_fk_objects(bug_detail['status'], models.Status),
@@ -239,7 +249,7 @@ class BugzillaAPI(object):
         )
         bug = models.Bug.objects.create(**values)
         print("Saved bug %d" % bug.bz_id)
-        self._add_m2m_field_objects(bug, aliases, cc, flags, groups, keywords)
+        self._add_m2m_field_objects(bug, cc, flags, groups, keywords)
         print("Added M2M to bug %d" % bug.bz_id)
 
         # Set all the fk and m2m relations to self (Bug to Bug) for all the bugs processed above.
@@ -259,10 +269,14 @@ class BugzillaAPI(object):
         """
 
         # Process through all bugs fetched
-        for bug_detail in self.bugs:
+        ctr = 0
+        for bug_detail in bugs:
+            print("\n======\nProcessing bug {}\n".format(bug_detail['id']))
             if not self._already_saved(bug_detail):
                 # bug, pending_fk_and_m2m_to_self = self._create_bug(bug_detail)
                 self._create_bug(bug_detail)
+                ctr += 1
+        return ctr
 
 """
 
@@ -270,6 +284,6 @@ func to get sample vals for some bug key - z should be the bug json list
 
 import json
 with open('/tmp/bugs.json') as f:
-    ...:     x = json.load(f)
+    x = json.load(f)['bugs']
 samplevals = lambda z,key: [z[key] for z in x if z[key]]
 """
