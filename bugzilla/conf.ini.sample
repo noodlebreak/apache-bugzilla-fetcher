@@ -1,0 +1,15 @@
+[defaultdb]
+ENGINE: django.db.backends.postgresql
+NAME: db_name
+USER: db_username
+PASSWORD: db_password 
+HOST: 127.0.0.1
+PORT: 5432
+
+
+[api_auth]
+bugzilla_api_key: not_really_needed
+
+
+[third_party_apis]
+bugzilla_rest_base: https://bz.apache.org/bugzilla/rest.cgi

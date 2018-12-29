@@ -1,0 +1,41 @@
+diff --git a/bugs/models.py b/bugs/models.py
+index a631b11..176e88d 100644
+--- a/bugs/models.py
++++ b/bugs/models.py
+@@ -2,7 +2,6 @@
+ from __future__ import unicode_literals
+ 
+ from django.db import models
+-from django.contrib.postgres.fields import ArrayField
+ 
+ # Create your models here.
+ 
+@@ -64,7 +63,7 @@ class Bug(models.Model):
+     alias = models.CharField(max_length=50)
+     assigned_to = models.ForeignKey('auth.User', null=True, blank=True, related_name='assigned_bugs')
+ 
+-    blocks = ArrayField(models.IntegerField(), blank=True)
++    blocks = models.ManyToManyField('self', blank=True, related_name='depends_on')
+ 
+     cc = models.ForeignKey('auth.User', null=True, blank=True, related_name='ccd_bugs')
+     classification = models.ForeignKey(Classification, null=True, blank=True)
+@@ -74,8 +73,8 @@ class Bug(models.Model):
+     creator = models.ForeignKey('auth.User', related_name='created_bugs')
+ 
+     deadline = models.DateTimeField(null=True, blank=True)
+-    depends_on = ArrayField(models.IntegerField(), blank=True)
+-    dupe_of = models.IntegerField(null=True, blank=True)
++    depends_on = models.ManyToManyField('self', blank=True, related_name='blocks')
++    dupe_of = models.OneToOneField('self', null=True, blank=True, related_name='dupe')
+     flags = models.ManyToManyField(Flag, blank=True)
+     groups = models.ManyToManyField(Group, blank=True)
+ 
+@@ -92,7 +91,7 @@ class Bug(models.Model):
+ 
+     qa_contact = models.ForeignKey('auth.User', null=True, blank=True, related_name='qa_bugs')
+     resolution = models.TextField(blank=True)
+-    see_also = ArrayField(models.IntegerField(), blank=True)
++    see_also = models.ManyToManyField('self', blank=True, related_name='related')
+     severity = models.ForeignKey(Severity)
+     status = models.ForeignKey(Status)
+     summary = models.TextField(blank=True)
